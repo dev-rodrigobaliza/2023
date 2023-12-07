@@ -1,0 +1,245 @@
+package main
+
+import (
+	_ "embed"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+//go:embed input.txt
+var input string
+
+type Map struct {
+	To    int
+	From  int
+	Range int
+}
+
+type Tree struct {
+	Root []*Map2
+	StS  []*Map2
+	StF  []*Map2
+	FtW  []*Map2
+	WtL  []*Map2
+	LtT  []*Map2
+	TtH  []*Map2
+	Htl  []*Map2
+}
+
+type Map2 struct {
+	Name     string
+	InS      int
+	InE      int
+	OutS     int
+	OutE     int
+	Parent   *Map2
+	Children []*Map2
+}
+
+type Almanac struct {
+	Seeds    []int
+	SeedsMap []Map
+
+	SeedToSoil            []Map
+	SoilToFertilizer      []Map
+	FertilizerToWater     []Map
+	WaterToLight          []Map
+	LightToTemperature    []Map
+	TemperatureToHumidity []Map
+	HumidityToLocation    []Map
+}
+
+func main() {
+	almanac := getAlmanac()
+	pos := getPositions(almanac)
+	minPos := slices.Min(pos)
+	println(minPos)
+
+	p := getMinLocation(almanac)
+	println(p)
+}
+
+func getMinLocation(almanac Almanac) int {
+	tree := getTree(almanac)
+	fmt.Printf("%+v\n", tree)
+
+	// range seeds get locations
+	// calc min
+
+	return 0
+}
+
+func getTree(almanac Almanac) Tree {
+	tree := Tree{
+		Root: getRoot(almanac.SeedsMap),
+		StS:  getBranche(almanac.SeedToSoil, "seed-to-soil"),
+		StF:  getBranche(almanac.SoilToFertilizer, "soil-to-fertilizer"),
+		FtW:  getBranche(almanac.FertilizerToWater, "fertilizer-to-water"),
+		WtL:  getBranche(almanac.WaterToLight, "water-to-light"),
+		LtT:  getBranche(almanac.LightToTemperature, "light-to-temperature"),
+		TtH:  getBranche(almanac.TemperatureToHumidity, "temperature-to-humidity"),
+		Htl:  getBranche(almanac.HumidityToLocation, "humidity-to-location"),
+	}
+
+	setChildren(tree.Root, tree.StS)
+	setChildren(tree.StS, tree.StF)
+	setChildren(tree.StF, tree.FtW)
+	setChildren(tree.FtW, tree.WtL)
+	setChildren(tree.WtL, tree.LtT)
+	setChildren(tree.LtT, tree.TtH)
+	setChildren(tree.TtH, tree.Htl)
+
+	return tree
+}
+
+func setChildren(parent, children []*Map2) {
+	for _, p := range parent {
+		p.Children = getChildren(p.OutS, p.OutE, children, p)
+	}
+}
+
+func getChildren(start, end int, maps []*Map2, parent *Map2) []*Map2 {
+	children := make([]*Map2, 0)
+	for _, m := range maps {
+		if (m.InS >= start && m.InS <= end) || (m.InE >= start && m.InE <= end) {
+			m.Parent = parent
+			children = append(children, m)
+		}
+	}
+
+	return children
+}
+
+func getBranche(seeds []Map, name string) []*Map2 {
+	branche := make([]*Map2, 0, len(seeds))
+	for _, s := range seeds {
+		branche = append(branche, &Map2{
+			Name: name,
+			InS:  s.From,
+			InE:  s.From + s.Range,
+			OutS: s.To,
+			OutE: s.To + s.Range,
+		})
+	}
+
+	return branche
+}
+
+func getRoot(seeds []Map) []*Map2 {
+	root := make([]*Map2, 0, len(seeds))
+	for _, s := range seeds {
+		root = append(root, &Map2{
+			Name: "root",
+			OutS: s.From,
+			OutE: s.From + s.Range,
+		})
+	}
+
+	return root
+}
+
+func getPositions(almanac Almanac) []int {
+	pos := make([]int, 0, len(almanac.Seeds))
+
+	for _, seed := range almanac.Seeds {
+		p := seed
+		p = getMapPosition(almanac.SeedToSoil, p)
+		p = getMapPosition(almanac.SoilToFertilizer, p)
+		p = getMapPosition(almanac.FertilizerToWater, p)
+		p = getMapPosition(almanac.WaterToLight, p)
+		p = getMapPosition(almanac.LightToTemperature, p)
+		p = getMapPosition(almanac.TemperatureToHumidity, p)
+		p = getMapPosition(almanac.HumidityToLocation, p)
+
+		pos = append(pos, p)
+	}
+
+	return pos
+}
+
+func getMapPosition(maps []Map, p int) int {
+	for _, m := range maps {
+		if m.From <= p && p <= m.From+m.Range {
+			diff := p - m.From
+			return m.To + diff
+		}
+	}
+
+	return p
+}
+
+func getAlmanac() Almanac {
+	lines := strings.Split(input, "\r\n")
+
+	almanac := Almanac{}
+	almanac.Seeds = getSeeds(lines[0])
+	almanac.SeedsMap = getSeedsMap(lines[0])
+	almanac.SeedToSoil = getMap(lines[3:35])
+	almanac.SoilToFertilizer = getMap(lines[37:55])
+	almanac.FertilizerToWater = getMap(lines[57:105])
+	almanac.WaterToLight = getMap(lines[107:140])
+	almanac.LightToTemperature = getMap(lines[142:178])
+	almanac.TemperatureToHumidity = getMap(lines[180:209])
+	almanac.HumidityToLocation = getMap(lines[211:])
+
+	return almanac
+}
+
+func getSeeds(line string) []int {
+	seeds := make([]int, 0)
+
+	parts := strings.Split(line, ":")
+	parts = strings.Split(parts[1], " ")
+	for _, part := range parts {
+		n, _ := strconv.Atoi(part)
+		seeds = append(seeds, n)
+	}
+
+	return seeds
+}
+
+func getSeedsMap(line string) []Map {
+	seeds := make([]Map, 0)
+
+	parts := strings.Split(line, ":")
+	parts = strings.Split(parts[1], " ")
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		if i%2 != 0 {
+			f, _ := strconv.Atoi(parts[i])
+			r, _ := strconv.Atoi(parts[i+1])
+			m := Map{
+				From:  f,
+				Range: r,
+			}
+
+			seeds = append(seeds, m)
+		}
+	}
+
+	return seeds
+}
+
+func getMap(lines []string) []Map {
+	maps := make([]Map, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.Split(line, " ")
+
+		to, _ := strconv.Atoi(parts[0])
+		from, _ := strconv.Atoi(parts[1])
+		r, _ := strconv.Atoi(parts[2])
+
+		maps = append(maps, Map{
+			To:    to,
+			From:  from,
+			Range: r,
+		})
+	}
+
+	return maps
+}
